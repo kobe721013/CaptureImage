@@ -16,9 +16,12 @@ import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.text.InputFilter;
+import android.text.Spanned;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ImageView;
 
 import android.widget.LinearLayout;
@@ -40,6 +43,9 @@ public class MainActivity extends AppCompatActivity {
     private Button btnCapture;
     private Button btnSave;
     private LinearLayout imageViewLayout;
+    private EditText editText;
+
+    private static final String DEFAULT_IP = "192.168.20.12";
     private static String MY_LOG="MY_LOG";
     private static final int CODE_FOR_WRITE_PERMISSION = 339;
     @Override
@@ -89,12 +95,38 @@ public class MainActivity extends AppCompatActivity {
         imageViewLayout.post(new Runnable() {
             @Override
             public void run() {
-                int w = imageViewLayout.getWidth();
+                int w = imageView.getWidth();
                 int h = w*9/16;//image 9:16
                 Log.d(MY_LOG, "set image width="+w+",high="+h);
-                imageViewLayout.setMinimumHeight(h);
+                imageView.setMinimumHeight(h);
             }
         });
+
+
+        editText = (EditText) findViewById(R.id.etBannedIpAddress);
+        InputFilter[] filters = new InputFilter[1];
+        filters[0] = new InputFilter() {
+            public CharSequence filter(CharSequence source, int start, int end, Spanned dest, int dstart, int dend) {
+                if (end > start) {
+                    String destTxt = dest.toString();
+                    String resultingTxt = destTxt.substring(0, dstart) + source.subSequence(start, end) + destTxt.substring(dend);
+                    if (!resultingTxt.matches ("^\\d{1,3}(\\.(\\d{1,3}(\\.(\\d{1,3}(\\.(\\d{1,3})?)?)?)?)?)?")) {
+                        return "";
+                    } else {
+                        String[] splits = resultingTxt.split("\\.");
+                        for (int i=0; i<splits.length; i++) {
+                            if (Integer.valueOf(splits[i]) > 255) {
+                                return "";
+                            }
+                        }
+                    }
+                }
+                return null;
+            }
+        };
+        editText.setFilters(filters);
+        editText.setText(DEFAULT_IP);
+
     }
 
     void saveImage(){
@@ -153,7 +185,9 @@ public class MainActivity extends AppCompatActivity {
         private Bitmap  bitmap = null;
         private Context context;
         private ProgressDialog pDialog;
-        private static final String IMAGE_GET_ADDRESS = "http://192.168.20.12:8080/reqimg";
+        private String IMAGE_GET_ADDRESS = "http://"+editText.getText()+":8080/reqimg";
+        //private String IMAGE_GET_ADDRESS = "http://192.168.20.12:8080/reqimg";
+
 
         public Task(Context context){
             this.context = context;
@@ -178,6 +212,7 @@ public class MainActivity extends AppCompatActivity {
 
             try
             {
+                Log.d(MY_LOG, "IP address="+IMAGE_GET_ADDRESS);
                 // create the HttpURLConnection
                 url = new URL(IMAGE_GET_ADDRESS);
                 HttpURLConnection connection = (HttpURLConnection) url.openConnection();
