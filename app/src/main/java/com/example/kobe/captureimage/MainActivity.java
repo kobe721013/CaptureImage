@@ -10,6 +10,10 @@ import android.graphics.BitmapFactory;
 import android.graphics.drawable.BitmapDrawable;
 
 
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
 import android.provider.MediaStore;
 import android.support.v4.app.ActivityCompat;
@@ -18,6 +22,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.text.InputFilter;
 import android.text.Spanned;
+import android.text.format.Formatter;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -28,8 +33,11 @@ import android.widget.LinearLayout;
 import android.widget.Toast;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.net.DatagramPacket;
 import java.net.HttpURLConnection;
 
+import java.net.InetAddress;
+import java.net.MulticastSocket;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -48,12 +56,30 @@ public class MainActivity extends AppCompatActivity {
     private static final String DEFAULT_IP = "192.168.20.12";
     private static String MY_LOG="MY_LOG";
     private static final int CODE_FOR_WRITE_PERMISSION = 339;
+    WifiManager.MulticastLock lock = null;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         setUiLayout();
+        WifiManager wifiManager = (WifiManager)this.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+        lock = wifiManager.createMulticastLock("wifitest");
+        lock.setReferenceCounted(true);
+        lock.acquire();
+        receiveUDPMulticast();
         Log.d("KobeLog", "start");
+    }
+
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        Log.d(MY_LOG, "onDestroy");
+        if(lock!=null){
+            Log.d(MY_LOG, "wifi multicast lock release ");
+            lock.release();
+        }
     }
 
     @Override
@@ -178,6 +204,68 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         saveImage();
+    }
+
+    private void receiveUDPMulticast(){
+
+        final String groupIP = "224.1.1.1";
+        final int groupPort = 4321;
+
+
+        Thread thread = new Thread(){
+            @Override
+            public void run() {
+
+                MulticastSocket s = null;
+
+                try {
+                    Log.d(MY_LOG, "multicast subThread start");
+                    String msg = "Hello";
+                    // 1
+                    s = new MulticastSocket(groupPort);
+                    // 2
+                    InetAddress group = InetAddress.getByName(groupIP);
+                    if(group.isMulticastAddress()==false){
+                        Log.e(MY_LOG, "IP address is not in 224.0.0.0~239.255.255.255");
+                        return;
+                    }
+                    s.joinGroup(group);
+                    //DatagramPacket hi = new DatagramPacket(msg.getBytes(), msg.length(),
+                    //        group, groupPort);
+                    //s.send(hi);
+
+                    while(true) {
+                        // get their responses!
+                        byte[] buf = new byte[1024*8];
+                        DatagramPacket recv = new DatagramPacket(buf, buf.length);
+                        s.receive(recv);
+                        //Log.d(MY_LOG, "len="+recv.getLength());
+
+                        if(recv.getLength() == 6){
+                            // header
+                            Log.d(MY_LOG, String.format(">>>>> header: (%02x)(%02x)(%02x)(%02x)(%02x)(%02x)", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5]));
+
+                        }
+                        else {
+                            //String result = new String(buf, recv.getOffset(), recv.getLength());
+                            Log.d(MY_LOG, "===== data receive len(" + recv.getLength() + "), offset(" + recv.getOffset() + ")");
+                        }
+                    }
+                }catch (IOException ioex){
+
+                    Log.e(MY_LOG, "multicast error 1:"+ ioex.getMessage());
+                }
+
+                finally {
+                    if(s != null) {
+                        s.close();
+                        lock.release();
+                    }
+                }
+            }
+        };
+
+        thread.start();
     }
 
     public class Task extends AsyncTask<Void,Void,String> {
